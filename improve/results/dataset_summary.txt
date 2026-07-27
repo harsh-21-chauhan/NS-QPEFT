@@ -1,0 +1,12 @@
+========== DATASET SUMMARY ==========
+
+Samples : 8190
+Average Depth : 14.63
+Average Gate Count : 59.77
+Average CX Count : 1.69
+Average Remote Gates : 1.00
+Average Bell Fidelity : 0.9540
+Average Latency : 32.89
+Average Waiting Time : 16.45
+Average Link Loss : 0.0460
+Average Output Fidelity : 0.9599

@@ -1,0 +1,6 @@
+Best Validation Loss : 0.000221
+Test MAE             : 0.009945
+Test RMSE            : 0.017028
+Test R2              : 0.768667
+Test MAPE            : 1.07%
+Training Time (sec)  : 8.16

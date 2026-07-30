@@ -1,28 +1,31 @@
-import copy
-import pandas as pd
+import math
+import os
+import time
 import torch
 import torch.nn as nn
+import pandas as pd
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_absolute_error, r2_score
-
-from torch.utils.data import DataLoader,TensorDataset
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+    mean_absolute_percentage_error
+)
 
 from baseline_model import BaselineModel
 from ns_qpeft import NSQPEFT
 
-# -------------------------
+os.makedirs("results", exist_ok=True)
 
-BATCH_SIZE = 64
-EPOCHS = 100
-
-# -------------------------
+# -----------------------------
+# Dataset
+# -----------------------------
 
 df = pd.read_csv("data/dataset.csv")
 
 features = [
-
     "depth",
     "gate_count",
     "num_qubits",
@@ -35,14 +38,12 @@ features = [
     "link_loss",
     "gate_error",
     "readout_error"
-
 ]
 
 X = df[features].values
 y = df["output_fidelity"].values.reshape(-1,1)
 
 scaler = MinMaxScaler()
-
 X = scaler.fit_transform(X)
 
 X_train,X_test,y_train,y_test = train_test_split(
@@ -58,15 +59,7 @@ X_test=torch.FloatTensor(X_test)
 y_train=torch.FloatTensor(y_train)
 y_test=torch.FloatTensor(y_test)
 
-train_loader=DataLoader(
-    TensorDataset(X_train,y_train),
-    batch_size=BATCH_SIZE,
-    shuffle=True
-)
-
-
-
-def train_model(model):
+def evaluate(model):
 
     criterion = nn.MSELoss()
 
@@ -75,24 +68,26 @@ def train_model(model):
         lr=1e-3
     )
 
-    for epoch in range(EPOCHS):
+    start=time.time()
+
+    for epoch in range(100):
 
         model.train()
 
-        for x_batch,y_batch in train_loader:
+        optimizer.zero_grad()
 
-            optimizer.zero_grad()
+        prediction=model(X_train)
 
-            prediction=model(x_batch)
+        loss=criterion(
+            prediction,
+            y_train
+        )
 
-            loss=criterion(
-                prediction,
-                y_batch
-            )
+        loss.backward()
 
-            loss.backward()
+        optimizer.step()
 
-            optimizer.step()
+    training_time=time.time()-start
 
     model.eval()
 
@@ -102,39 +97,87 @@ def train_model(model):
 
     prediction=prediction.numpy()
 
+    truth=y_test.numpy()
+
     mae=mean_absolute_error(
-        y_test,
+        truth,
         prediction
+    )
+
+    rmse=math.sqrt(
+        mean_squared_error(
+            truth,
+            prediction
+        )
     )
 
     r2=r2_score(
-        y_test,
+        truth,
         prediction
     )
 
-    return mae,r2
+    mape=mean_absolute_percentage_error(
+        truth,
+        prediction
+    )*100
 
+    return [
+        mae,
+        rmse,
+        r2,
+        mape,
+        training_time
+    ]
 
-baseline = BaselineModel()
+baseline=BaselineModel()
 
-baseline_mae,baseline_r2 = train_model(
+baseline_result=evaluate(
     baseline
 )
 
-nsqpeft = NSQPEFT()
+nsqpeft=NSQPEFT()
 
-ns_mae,ns_r2 = train_model(
+ns_result=evaluate(
     nsqpeft
 )
 
-print("\n-----------")
+result=pd.DataFrame({
 
-print("Baseline")
+    "Model":[
+        "Baseline",
+        "NS-QPEFT"
+    ],
 
-print("MAE :",baseline_mae)
-print("R2  :",baseline_r2)
+    "MAE":[
+        baseline_result[0],
+        ns_result[0]
+    ],
 
-print("\nNS-QPEFT")
+    "RMSE":[
+        baseline_result[1],
+        ns_result[1]
+    ],
 
-print("MAE :",ns_mae)
-print("R2  :",ns_r2)
+    "R2":[
+        baseline_result[2],
+        ns_result[2]
+    ],
+
+    "MAPE":[
+        baseline_result[3],
+        ns_result[3]
+    ],
+
+    "Training_Time":[
+        baseline_result[4],
+        ns_result[4]
+    ]
+
+})
+
+print(result)
+
+result.to_csv(
+    "results/ablation_results.csv",
+    index=False
+)

@@ -3,11 +3,17 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import os
-
+import math
+import time
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+    mean_absolute_percentage_error
+)
 
 from ns_qpeft import NSQPEFT
 
@@ -127,6 +133,9 @@ counter = 0
 
 train_history = []
 val_history = []
+history = []
+
+start_time = time.time()
 
 for epoch in range(EPOCHS):
 
@@ -181,6 +190,13 @@ for epoch in range(EPOCHS):
     train_history.append(train_loss)
     val_history.append(val_loss)
 
+    history.append({
+    "epoch": epoch + 1,
+    "train_loss": train_loss,
+    "validation_loss": val_loss,
+    "learning_rate": optimizer.param_groups[0]["lr"]
+    })
+
     print(
         f"Epoch {epoch+1:03d} | "
         f"Train {train_loss:.6f} | "
@@ -218,6 +234,9 @@ model.load_state_dict(best_model)
 
 
 os.makedirs("models", exist_ok=True)
+os.makedirs("results", exist_ok=True)
+
+training_time = time.time() - start_time
 
 torch.save(
     model.state_dict(),
@@ -239,23 +258,115 @@ with torch.no_grad():
 prediction = prediction.numpy()
 truth = y_test.numpy()
 
+# -------------------------------------------------
+# Metrics
+# -------------------------------------------------
+
 mae = mean_absolute_error(
     truth,
     prediction
 )
 
-rmse = mean_squared_error(
-    truth,
-    prediction
-) ** 0.5
+rmse = math.sqrt(
+    mean_squared_error(
+        truth,
+        prediction
+    )
+)
 
 r2 = r2_score(
     truth,
     prediction
 )
 
+mape = mean_absolute_percentage_error(
+    truth,
+    prediction
+) * 100
+
 print("\n----------------------------")
-print("Test MAE :",mae)
-print("Test RMSE:",rmse)
-print("Test R2  :",r2)
+print(f"Test MAE   : {mae:.6f}")
+print(f"Test RMSE  : {rmse:.6f}")
+print(f"Test R²    : {r2:.6f}")
+print(f"Test MAPE  : {mape:.2f}%")
+print(f"Train Time : {training_time:.2f} sec")
 print("----------------------------")
+
+# -------------------------------------------------
+# Save Training Log
+# -------------------------------------------------
+
+history_df = pd.DataFrame(history)
+
+history_df.to_csv(
+    "results/training_log.csv",
+    index=False
+)
+
+# -------------------------------------------------
+# Save Loss Curve
+# -------------------------------------------------
+
+loss_df = pd.DataFrame({
+    "epoch": range(1, len(train_history) + 1),
+    "train_loss": train_history,
+    "validation_loss": val_history
+})
+
+loss_df.to_csv(
+    "results/loss_curve.csv",
+    index=False
+)
+
+# -------------------------------------------------
+# Save Metrics (TXT)
+# -------------------------------------------------
+
+with open(
+    "results/training_metrics.txt",
+    "w"
+) as f:
+
+    f.write(f"Best Validation Loss : {best_loss:.6f}\n")
+    f.write(f"Test MAE             : {mae:.6f}\n")
+    f.write(f"Test RMSE            : {rmse:.6f}\n")
+    f.write(f"Test R2              : {r2:.6f}\n")
+    f.write(f"Test MAPE            : {mape:.2f}%\n")
+    f.write(f"Training Time (sec)  : {training_time:.2f}\n")
+
+# -------------------------------------------------
+# Save Metrics (CSV)
+# -------------------------------------------------
+
+metrics_df = pd.DataFrame({
+
+    "Metric": [
+
+        "Best Validation Loss",
+        "MAE",
+        "RMSE",
+        "R2",
+        "MAPE",
+        "Training Time (sec)"
+
+    ],
+
+    "Value": [
+
+        best_loss,
+        mae,
+        rmse,
+        r2,
+        mape,
+        training_time
+
+    ]
+
+})
+
+metrics_df.to_csv(
+    "results/final_metrics.csv",
+    index=False
+)
+
+print("\nTraining completed successfully.")
